@@ -3,7 +3,7 @@ version: "3.9"
 services:
   api:
     environment:
-      - OPENROUTER_API_KEY=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
+      - OPENROUTER_API_KEY=
       - OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 
     # PostgreSQL Database
