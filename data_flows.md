@@ -1,0 +1,304 @@
+OperatorDash/docs/data_flows.md
+```
+
+# Data Flow Diagrams - Micromarket Operator Platform
+
+## Table of Contents
+
+1. [Overview](#1-overview)
+2. [Report Upload Flow](#2-report-upload-flow)
+3. [Dashboard Data Flow](#3-dashboard-data-flow)
+4. [Chatbot MCP Flow](#4-chatbot-mcp-flow)
+5. [Real-time Updates Flow](#5-real-time-updates-flow)
+
+---
+
+## 1. Overview
+
+Simple data flows for a startup-phase platform handling <100 users.
+
+---
+
+## 2. Report Upload Flow
+
+```
+┌──────────┐     ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│  User    │────►│  Upload API │────►│  Validation  │────►│  Local       │
+│  (Web)   │     │  (FastAPI)  │     │  (Schema)    │     │  Storage     │
+└──────────┘     └─────────────┘     └──────────────┘     └──────┬──────┘
+                                                                  │
+                              ┌───────────────────────────────────┘
+                              │
+                              ▼
+                       ┌──────────────┐
+                       │  Background  │
+                       │  Job (RQ)    │
+                       └───────┬──────┘
+                               │
+                               ▼
+                       ┌──────────────┐
+                       │   Parser     │
+                       │   (Python)   │
+                       └───────┬──────┘
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+              ▼                ▼                ▼
+        ┌──────────┐    ┌──────────┐    ┌──────────┐
+        │ Products │    │ Inventory│    │  Sales   │
+        │  Table   │    │  Table   │    │  Table   │
+        │ (Postgres)│    │ (Postgres)│   │ (Postgres)│
+        └──────────┘    └──────────┘    └──────────┘
+              │                │                │
+              └────────────────┼────────────────┘
+                               │
+                               ▼
+                       ┌──────────────┐
+                       │  Analysis    │
+                       │  Trigger     │
+                       └──────────────┘
+```
+
+### Steps
+
+| Step | Component | Action |
+|------|-----------|--------|
+| 1 | Web UI | User selects CSV/Excel file |
+| 2 | API | Receive file, validate format |
+| 3 | Storage | Save to `/uploads/` folder |
+| 4 | Queue | Add to RQ for processing |
+| 5 | Parser | Read file, map columns |
+| 6 | Database | Insert/update records |
+| 7 | Trigger | Run analysis if needed |
+
+---
+
+## 3. Dashboard Data Flow
+
+```
+┌──────────┐     ┌─────────────┐     ┌─────────────────────────────┐
+│  User    │────►│  Dashboard  │────►│      Analytics Engine         │
+│  (Web)   │     │    API      │     │       (Python/FastAPI)        │
+└──────────┘     └─────────────┘     │                               │
+                                      │  ┌─────────┐  ┌──────────┐  │
+                                      │  │  Trend  │  │ Anomaly  │  │
+                                      │  │Analyzer │  │ Detector │  │
+                                      │  └────┬────┘  └─────┬────┘  │
+                                      │       │             │       │
+                                      │  ┌────▼────┐  ┌─────▼────┐  │
+                                      │  │Recommend│  │ Forecast │  │
+                                      │  │ Engine  │  │  Engine  │  │
+                                      │  └────┬────┘  └─────┬────┘  │
+                                      │       └─────────────┘       │
+                                      └─────────────┬───────────────┘
+                                                    │
+                                                    ▼
+                                            ┌──────────────┐
+                                            │  PostgreSQL  │
+                                            │  (Read)      │
+                                            └──────────────┘
+                                                    │
+                                                    ▼
+                                            ┌──────────────┐
+                                            │  Top 5       │
+                                            │  Insights    │
+                                            │  Response    │
+                                            └──────────────┘
+```
+
+### Cache Strategy (Simple)
+
+```
+┌─────────────┐     ┌─────────────┐
+│   Request   │────►│  Redis      │
+│             │     │  Cache?     │
+└─────────────┘     └──────┬──────┘
+                           │
+              ┌────────────┴────────────┐
+              │ Hit                     │ Miss
+              ▼                         ▼
+       ┌─────────────┐          ┌──────────────┐
+       │  Return     │          │  Query DB    │
+       │  Cached     │          │  Compute     │
+       └─────────────┘          └──────┬───────┘
+                                       │
+                                       ▼
+                               ┌──────────────┐
+                               │  Store in    │
+                               │  Redis (5min)│
+                               └──────────────┘
+```
+
+---
+
+## 4. Chatbot MCP Flow
+
+```
+┌──────────┐     ┌─────────────┐     ┌─────────────────────────────────┐
+│  User    │────►│  Chat API   │────►│         MCP Server              │
+│  (Web)   │     │  (FastAPI)  │     │         (Python)                │
+└──────────┘     └─────────────┘     │                                 │
+                                      │  ┌─────────────────────────┐   │
+                                      │  │    Context Manager      │   │
+                                      │  │  - Session context      │   │
+                                      │  │  - Selected market      │   │
+                                      │  │  - User permissions     │   │
+                                      │  └─────────────────────────┘   │
+                                      │              │                  │
+                                      │              ▼                  │
+                                      │  ┌─────────────────────────┐   │
+                                      │  │    Intent Router        │   │
+                                      │  │  - Query classification │   │
+                                      │  │  - Tool selection       │   │
+                                      │  └─────────────────────────┘   │
+                                      │              │                  │
+                                      └──────────────┼──────────────────┘
+                                                     │
+                              ┌─────────────────────┼─────────────────────┐
+                              │                     │                     │
+                              ▼                     ▼                     ▼
+                        ┌──────────┐          ┌──────────┐          ┌──────────┐
+                        │  DB Tool │          │ Calc Tool│          │ API Tool │
+                        │          │          │          │          │          │
+                        │ • Query  │          │ • Math   │          │ • Export │
+                        │ • Filter │          │ • Stats  │          │ • Save   │
+                        └────┬─────┘          └────┬─────┘          └────┬─────┘
+                             │                     │                     │
+                             └─────────────────────┼─────────────────────┘
+                                                   │
+                                                   ▼
+                                           ┌──────────────┐
+                                           │  LLM Prompt  │
+                                           │  Builder     │
+                                           └──────┬───────┘
+                                                  │
+                                                  ▼
+                                           ┌──────────────┐
+                                           │   LLM API    │
+                                           │(OpenAI/Claude)│
+                                           └──────┬───────┘
+                                                  │
+                                                  ▼
+                                           ┌──────────────┐
+                                           │   Response   │
+                                           │   Formatter  │
+                                           └──────┬───────┘
+                                                  │
+                                                  ▼
+                                           ┌──────────────┐
+                                           │    User      │
+                                           └──────────────┘
+```
+
+### Simple Context Management
+
+```
+┌─────────────────────────────────────────┐
+│         Session Context (Redis)         │
+├─────────────────────────────────────────┤
+│  {                                      │
+│    "session_id": "uuid",                │
+│    "operator_id": "uuid",               │
+│    "active_market": "market_uuid",      │
+│    "messages": [...],                   │
+│    "last_activity": "timestamp"         │
+│  }                                      │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## 5. Real-time Updates Flow
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Database   │────►│  Simple      │────►│  WebSocket   │
+│   Trigger    │     │  Pub/Sub     │     │  (Socket.io) │
+└──────────────┘     │  (Redis)     │     └──────┬───────┘
+                     └──────────────┘            │
+                              │                  │
+                              │                  ▼
+                              │           ┌──────────────┐
+                              │           │   Browser    │
+                              │           │   (Web App)  │
+                              │           └──────────────┘
+                              │
+                              ▼
+                       ┌──────────────┐
+                       │   In-App     │
+                       │   Notifications
+                       └──────────────┘
+```
+
+### Notification Types
+
+| Event | Trigger | Action |
+|-------|---------|--------|
+| Upload Complete | File processing done | Show success toast |
+| Low Stock Alert | Inventory below threshold | Show alert badge |
+| New Insight | Analysis generated | Update dashboard |
+
+---
+
+## Component Interactions
+
+### Simple Architecture Stack
+
+```
+┌─────────────────────────────────────────┐
+│              Browser (React)            │
+│         - Dashboard UI                  │
+│         - Chat Interface                │
+│         - File Upload                   │
+└───────────────────┬─────────────────────┘
+                    │ HTTP / WebSocket
+┌───────────────────▼─────────────────────┐
+│              API Gateway                │
+│         (Simple Nginx / Direct)         │
+└───────────────────┬─────────────────────┘
+                    │
+┌───────────────────▼─────────────────────┐
+│              FastAPI Server             │
+│  ┌─────────┐ ┌─────────┐ ┌───────────┐ │
+│  │  Auth   │ │Analytics│ │  Chat/MCP │ │
+│  │ Routes  │ │ Routes  │ │   Routes  │ │
+│  └─────────┘ └─────────┘ └───────────┘ │
+└───────────────────┬─────────────────────┘
+                    │
+        ┌───────────┼───────────┐
+        │           │           │
+┌───────▼────┐ ┌────▼────┐ ┌────▼──────┐
+│ PostgreSQL │ │  Redis  │ │  Local    │
+│   (Data)   │ │ (Cache  │ │  Storage  │
+│            │ │  +Queue)│ │ (Uploads) │
+└────────────┘ └─────────┘ └───────────┘
+```
+
+---
+
+## Deployment (Simple Docker)
+
+```
+┌─────────────────────────────────────────┐
+│           Docker Compose                │
+│  ┌─────────────┐  ┌─────────────┐      │
+│  │   Web App   │  │   FastAPI   │      │
+│  │   (React)   │  │   (Python)  │      │
+│  │   :3000     │  │   :8000     │      │
+│  └─────────────┘  └──────┬──────┘      │
+│                          │              │
+│  ┌─────────────┐  ┌──────▼──────┐      │
+│  │   Nginx     │  │  PostgreSQL │      │
+│  │  (Gateway)  │  │    :5432    │      │
+│  │   :80/443   │  └─────────────┘      │
+│  └─────────────┘  ┌─────────────┐      │
+│                   │    Redis    │      │
+│                   │    :6379    │      │
+│                   └─────────────┘      │
+└─────────────────────────────────────────┘
+```
+
+---
+
+*Last Updated: January 2025*
+*Version: 1.1 - Simplified Architecture*
